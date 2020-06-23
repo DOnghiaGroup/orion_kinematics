@@ -5,6 +5,8 @@ from astropy.coordinates.builtin_frames import LSR
 from astropy.coordinates import (CartesianRepresentation,CartesianDifferential,CylindricalRepresentation,CylindricalDifferential)
 from astropy.coordinates import ICRS, Galactic, GalacticLSR, Galactocentric
 import astropy.units as u
+import matplotlib.pyplot as plt
+
 
 '''
 Functions for examining the kinematics of Orion clusters
@@ -105,7 +107,7 @@ def grouping_ICRS(df, group_select,ra_dec_region=None):
 Next two functions return a coordinate frame (cartesian and equitorial) in a stellar group's reference frame 
 by subtracting off LSR and average motion of group. Method used in Kounkel et al. (2018)
 '''
-def rf_cartesian(input_coord_sys, average_velocity = None):
+def rf_cartesian(input_coord_sys, coord_type = 'galactic', average_velocity = None):
     """ Convert to reference frame of stellar group after subtraction of LSR (U,V,W) = (11.1,12.24,7.25) kms^-1
     defined in Schönrich et al. (2010) and leave it in cartesian coordinates.
     Parameters
@@ -121,29 +123,48 @@ def rf_cartesian(input_coord_sys, average_velocity = None):
         ICRS frame
     """
     galactic = input_coord_sys.transform_to(GalacticLSR) # This conversion implicitly subtracts off the LSR
+
     galactic.representation_type = 'cartesian'
     galactic.differential_type = 'cartesian'
 
-    x_new = galactic.cartesian.x
+    x_new = galactic.cartesian.x 
     y_new = galactic.cartesian.y
     z_new = galactic.cartesian.z
+
+#    d_x = galactic.velocity.d_x - 9.58*(u.km/u.s)
+#    d_y = galactic.velocity.d_y - 10.52*(u.km/u.s)
+#    d_z = galactic.velocity.d_z - 7.01*(u.km/u.s)
+
+    d_x = galactic.velocity.d_x
+    d_y = galactic.velocity.d_y
+    d_z = galactic.velocity.d_z
     
     if average_velocity == None:
-        dx_median = np.median(galactic.velocity.d_x.value)
-        dy_median = np.median(galactic.velocity.d_y.value)
-        dz_median = np.median(galactic.velocity.d_z.value)
-        print('median(dx) = {} km/s, median(dy) = {} km/s, median(dz) = {} km/s'.format(dx_median, dy_median, dz_median))
+        dx_average = np.median(d_x.value)*(u.km/u.s)
+        dy_average = np.median(d_y.value)*(u.km/u.s)
+        dz_average = np.median(d_z.value)*(u.km/u.s)
     else:
-        dx_median = average_velocity[0]
-        dy_median = average_velocity[1]
-        dz_median = average_velocity[2]
+        dx_average = average_velocity[0]*(u.km/u.s)
+        dy_average = average_velocity[1]*(u.km/u.s)
+        dz_average = average_velocity[2]*(u.km/u.s)
         
-    dx_new = (galactic.velocity.d_x.value - dx_median)*(u.km/u.s)
-    dy_new = (galactic.velocity.d_y.value - dy_median)*(u.km/u.s)
-    dz_new = (galactic.velocity.d_z.value - dz_median)*(u.km/u.s)
+    dx_new = (d_x.value - dx_average.value)*(u.km/u.s)
+    dy_new = (d_y.value - dy_average.value)*(u.km/u.s)
+    dz_new = (d_z.value  - dz_average.value)*(u.km/u.s)
+
+#    dx_average = np.mean(dx_new)
+#    dy_average = np.mean(dy_new)
+#    dz_average = np.mean(dz_new)
+
+
+#    print('median(dx) = {} km/s, median(dy) = {} km/s, median(dz) = {} km/s'.format(dx_median, dy_median, dz_median))
+    cartesian_representation = Galactic(x_new, y_new, z_new, dx_new, dy_new, dz_new, representation_type = CartesianRepresentation, differential_type = CartesianDifferential)
+
+    center_cartesian_representation = Galactic(np.median(x_new), np.median(y_new), np.median(z_new), dx_average, dy_average, dz_average, representation_type = CartesianRepresentation, differential_type = CartesianDifferential)
+
     
-    cartesian_representation = ICRS(x_new, y_new, z_new, dx_new, dy_new, dz_new, representation_type = CartesianRepresentation, differential_type = CartesianDifferential)
-    return cartesian_representation
+#    cartesian_representation = ICRS(x_new, y_new, z_new, dx_new, dy_new, dz_new, representation_type = CartesianRepresentation, differential_type = CartesianDifferential)
+    return (cartesian_representation, center_cartesian_representation)
 
 def rf_equitorial(input_coord_sys, average_velocities=None):
     """ Convert to reference frame of stellar group after subtraction of LSR (U,V,W) = (11.1,12.24,7.25) kms^-1
@@ -161,9 +182,8 @@ def rf_equitorial(input_coord_sys, average_velocities=None):
         ICRS frame
     """    
 
-    cartesian_representation = rf_cartesian(input_coord_sys,average_velocities=None)
+    cartesian_representation, center = rf_cartesian(input_coord_sys)
     revert = cartesian_representation.transform_to(ICRS)
-    crep = revert
     revert.representation_type = 'spherical'
     revert.differential_type = 'spherical'
 
@@ -174,5 +194,59 @@ def rf_equitorial(input_coord_sys, average_velocities=None):
     return rf_lsr_equitorial 
 
 
+def implement_ward_2018(group_icrs):
+    '''
+    An implementation of Ward & Kruijssen et al. 2018.
+    Projects the 3D vector velocities onto the radial unit
+    vector to show expansion/contraction from center
+    '''
+    from sklearn.metrics.pairwise import cosine_similarity
+    from sklearn.preprocessing import normalize
 
+    group_cart, center = rf_cartesian(group_icrs,average_velocity = (0,0,0))
+    x = group_cart.cartesian.x.value
+    y = group_cart.cartesian.y.value
+    z = group_cart.cartesian.z.value
+
+    X = x - np.median(x)
+    Y = y - np.median(y)
+    Z = z - np.median(z)
+
+    v_x = group_cart.U.value
+    v_y = group_cart.V.value
+    v_z = group_cart.W.value
+
+    VX = v_x - np.median(v_x)
+    VY = v_y - np.median(v_y)
+    VZ = v_z - np.median(v_z)
+
+    xyz = np.array([X,Y,Z]).T
+    dxyz = np.array([VX,VY,VZ]).T
+
+    # find the norm of projected vector
+    cos = np.diag(cosine_similarity(dxyz, xyz))
+    norm = cos * np.linalg.norm(dxyz, axis=-1)
+    # get projected vector
+    dxyz = norm * normalize(xyz).T
+    dxyz = dxyz.T
+
+    # generate colors
+    color_list = []
+    for n in norm:
+        if n > 0:
+            color_list.append('blue')
+        else:
+            color_list.append('red')
+    ratio_expansion_contraction = len(norm[np.where(norm>0)])/len(norm[np.where(norm<0)])
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D
+    fig = plt.figure()
+    ax = fig.add_subplot(projection='3d')
+    ax.set_xlabel('X (pc)')
+    ax.set_ylabel('Y (pc)')
+    ax.set_zlabel('Z (pc)')
+    ax.quiver(x, y, z, dxyz[:,0], dxyz[:,1], dxyz[:,2], color=color_list, normalize=True,length=4,label='Ratio Expanding/Contracting = {}'.format(round(ratio_expansion_contraction,2)))
+    plt.legend()
+    plt.show()
+    return norm 
 

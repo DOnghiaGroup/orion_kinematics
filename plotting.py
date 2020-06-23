@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D  
 from astropy.coordinates import (CartesianRepresentation,CartesianDifferential,SphericalRepresentation,SphericalDifferential)
 from astropy.coordinates import ICRS, Galactic, GalacticLSR, Galactocentric
+import numpy as np
 
 def cartesian_3d(coordinate_frames,colors=None,labels=None,linewidths=None):
     """ Plots 3d vector velocities in cartesian coordinates 
@@ -29,15 +30,16 @@ def cartesian_3d(coordinate_frames,colors=None,labels=None,linewidths=None):
         assert cf.representation_type == CartesianRepresentation
         assert cf.differential_type == CartesianDifferential
 
-        x = cf.x.value
-        y = cf.y.value
-        z = cf.z.value
+        x = cf.cartesian.x.value
+        y = cf.cartesian.y.value
+        z = cf.cartesian.z.value
 
-        v_x = cf.v_x.value
-        v_y = cf.v_y.value
-        v_z = cf.v_z.value
+        v_x = cf.U.value
+        v_y = cf.V.value
+        v_z = cf.W.value
 
-        ax.quiver(x,y,z,v_x,v_y,v_z,normalize=True,linewidth=lw,label = l,color=c,length=5)
+#        ax.scatter(0, 0, 0, s = 20, color = 'yellow', edgecolor = 'black', label = 'Sun')
+        ax.quiver(x,y,z,v_x,v_y,v_z,normalize=True,linewidth=lw,label = l,color=c,length=3)
         ax.set_xlabel('x (pc)')
         ax.set_ylabel('y (pc)')
         ax.set_zlabel('z (pc)')
@@ -96,3 +98,4 @@ def equitorial_2d(cf):
     ax.set_ylabel('dec (deg)')
     plt.gca().invert_xaxis()
     plt.show()
+
